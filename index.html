@@ -205,7 +205,7 @@
   <header class="page">
     <div class="eyebrow">Battery second life &middot; option-exercise model</div>
     <h1>Threshold Bench</h1>
-    <p class="lede">Optimal option price and the resulting battery state-of-health (SoH) exercise range, for a given repurposing/recycling valuation regime.</p>
+    <p class="lede">Optimal option price and the resulting battery state-of-health (SoH) purchase range, for a given repurposing/recycling valuation regime.</p>
   </header>
 
   <div class="layout">
@@ -292,14 +292,14 @@
 
       <div class="panel chart-card">
         <div class="chart-head">
-          <h3>Exercise range at k*</h3>
+          <h3>Purchase range at k*</h3>
           <span class="note">Battery state of health q &isin; [0, 1]</span>
         </div>
         <div class="chart-box"><svg id="chart-q" viewBox="0 0 640 140" preserveAspectRatio="xMidYMid meet"></svg></div>
         <div class="legend">
-          <span class="legend-item"><span class="swatch buy"></span>Will definitely exercise (P = 1)</span>
-          <span class="legend-item"><span class="swatch buy-prob"></span>Will probabilistically exercise (0 &lt; P &lt; 1)</span>
-          <span class="legend-item"><span class="swatch no-buy"></span>Won't exercise</span>
+          <span class="legend-item"><span class="swatch buy"></span>Purchases &amp; exercises definitely (P = 1)</span>
+          <span class="legend-item"><span class="swatch buy-prob"></span>Purchases &amp; exercises probabilistically (0 &lt; P &lt; 1)</span>
+          <span class="legend-item"><span class="swatch no-buy"></span>Won't buy</span>
         </div>
       </div>
 
@@ -638,16 +638,18 @@
 
     var parts = [];
 
-    // reusable diagonal-hatch fill for the "probabilistic exercise" pieces
-    // (0<P<1), so it reads as a distinct sub-category of the buy region
-    // without introducing a third hue -- still unmistakably "green = buy".
+    // reusable diagonal-hatch fill for the "purchases & exercises
+    // probabilistically" pieces (0<P<1), so it reads as a distinct
+    // sub-category of the buy region without introducing a third hue --
+    // still unmistakably "green = buy".
     parts.push('<defs><pattern id="probHatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="var(--buy-soft)"></rect><rect width="2" height="4" fill="var(--buy)"></rect></pattern></defs>');
 
-    // base fill = won't-exercise (red); the exercise intervals are painted on
-    // top -- solid green where P(q)=1 (P1 branch), hatched green where
-    // 0<P(q)<1 (Pe branch). res.segs are the decision table's active
-    // q-intervals at k*, so their union is exactly "who might exercise";
-    // everything else in [0,1] is "won't exercise".
+    // base fill = won't-buy (red); the purchase intervals are painted on
+    // top -- solid green where P(q)=1 (definitely exercises, P1 branch),
+    // hatched green where 0<P(q)<1 (probabilistically exercises, Pe
+    // branch). res.segs are the decision table's active q-intervals at k*,
+    // so their union is exactly "who buys"; everything else in [0,1]
+    // is "won't buy".
     parts.push('<rect x="' + ML + '" y="' + barY + '" width="' + innerW + '" height="' + barH + '" rx="5" fill="' + noBuy + '"></rect>');
 
     res.segs.slice().sort(function(a,b){ return a.lo-b.lo; }).forEach(function(seg){
@@ -747,7 +749,7 @@
     if (res.segs.length === 0){
       var chip0 = document.createElement("span");
       chip0.className = "chip zero";
-      chip0.textContent = "no exercise";
+      chip0.textContent = "no purchase";
       chipRow.appendChild(chip0);
     }
 
