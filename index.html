@@ -10,6 +10,8 @@
     --line:#E3DCCF; --line-strong:#CFC5B4;
     --accent:#B15E1F; --accent-strong:#8F4A15; --accent-soft:#F4E3D3;
     --positive:#0E8F7E; --positive-soft:#DCEFEC;
+    --buy:#1F8E63; --buy-soft:#DCEFE6;
+    --no-buy:#C85A28; --no-buy-soft:#F6E3D8;
     --track:#E9E2D5;
     --focus:rgba(177,94,31,.45);
     --shadow:rgba(33,29,24,.10);
@@ -23,6 +25,8 @@
       --line:#362F26; --line-strong:#4A4033;
       --accent:#CC7A38; --accent-strong:#F0A05C; --accent-soft:#3A2A1A;
       --positive:#2FA895; --positive-soft:#163531;
+      --buy:#1F9E6E; --buy-soft:#193A2C;
+      --no-buy:#D9622E; --no-buy-soft:#3D2417;
       --track:#2B241C;
       --focus:rgba(204,122,56,.55);
       --shadow:rgba(0,0,0,.45);
@@ -34,6 +38,8 @@
     --line:#362F26; --line-strong:#4A4033;
     --accent:#CC7A38; --accent-strong:#F0A05C; --accent-soft:#3A2A1A;
     --positive:#2FA895; --positive-soft:#163531;
+    --buy:#1F9E6E; --buy-soft:#193A2C;
+    --no-buy:#D9622E; --no-buy-soft:#3D2417;
     --track:#2B241C;
     --focus:rgba(204,122,56,.55);
     --shadow:rgba(0,0,0,.45);
@@ -184,9 +190,8 @@
   .legend{display:flex; gap:16px; flex-wrap:wrap; margin-top:12px;}
   .legend-item{display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-soft);}
   .swatch{width:12px; height:12px; border-radius:3px; flex:none;}
-  .swatch.solid-positive{background:var(--positive);}
-  .swatch.grad-accent{background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 20%, transparent), var(--accent));}
-  .swatch.none{background:var(--track); border:1px solid var(--line-strong);}
+  .swatch.buy{background:var(--buy);}
+  .swatch.no-buy{background:var(--no-buy);}
 
   footer.formula{
     margin-top:20px; padding-top:14px; border-top:1px solid var(--line);
@@ -279,7 +284,7 @@
       <div class="panel chart-card">
         <div class="chart-head">
           <h3>Profit across search cost</h3>
-          <span class="note">&Pi;(k) over k &isin; (0, z), sampled &amp; optimized numerically</span>
+          <span class="note">&Pi;(k) over k &isin; (0, z); k* solved in closed form</span>
         </div>
         <div class="chart-box"><svg id="chart-profit" viewBox="0 0 640 240" preserveAspectRatio="xMidYMid meet"></svg></div>
       </div>
@@ -291,9 +296,8 @@
         </div>
         <div class="chart-box"><svg id="chart-q" viewBox="0 0 640 140" preserveAspectRatio="xMidYMid meet"></svg></div>
         <div class="legend">
-          <span class="legend-item"><span class="swatch solid-positive"></span>Guaranteed purchase (P = 1)</span>
-          <span class="legend-item"><span class="swatch grad-accent"></span>Probabilistic purchase (p<sub>e</sub>, shaded by probability)</span>
-          <span class="legend-item"><span class="swatch none"></span>No purchase</span>
+          <span class="legend-item"><span class="swatch buy"></span>Will buy</span>
+          <span class="legend-item"><span class="swatch no-buy"></span>Won't buy</span>
         </div>
       </div>
 
@@ -441,29 +445,96 @@
     return {total: total, segs: segs, Q: Q};
   }
 
-  function findOptimum(p, cls, kb){
-    var kMin = Math.max(p.z * 0.001, 1e-4);
-    var kMax = p.z;
-    var N = 260;
-    var curve = [];
+  // ---------- closed-form k* (FOC/SOC solved per cell, section 11) ----------
+  //
+  // Using V(q)-v_hat(q)-c_i = 2z*p_e(q) on the Pe branch, every cell's profit
+  // integral reduces to a function of w = sqrt(k/z), and dPi/dk=0 collapses to
+  // a quadratic in w. Two "shapes" cover every q_p-touching piece in section 9:
+  //   Shape A: interval [q_p, C]  (q_p is the LOWER bound)
+  //   Shape B: interval [C, q_p]  (q_p is the UPPER bound)
+  // where C is a fixed (k-independent) endpoint (0, 1, or q_tilde) and S is the
+  // slope contributed by any other, fixed-bound piece active in the same row.
+  // Cells whose active row never touches q_p (H,H; the "lower" half of H,M,
+  // M,M and M,H; L,L) are linear in k, so their optimum is always a corner --
+  // handled below by simply comparing candidate k-values directly.
+
+  function a1fn(p){ return -safeD(p) / (4*p.z); }
+  function p1fn(p){ return pe(1, p); }               // p1^2 = kBar/z
+  function u0fn(p){ return pe(0, p); }                // u0^2 = kTilde/z
+  function qtfn(p){ return qVals(p, 0).qt; }          // k-independent
+
+  function wShapeA(uC, S, a1){
+    var disc = 1 + 2*uC*uC + 4*S*a1;
+    if (disc < 0) return null;
+    var w = (-1 + Math.sqrt(disc)) / 2;
+    return w >= 0 ? w : null;
+  }
+  function wShapeB(uC, S, a1){
+    var disc = 1 + 2*uC*uC - 4*S*a1;
+    if (disc < 0) return null;
+    var w = (-1 + Math.sqrt(disc)) / 2;
+    return w >= 0 ? w : null;
+  }
+
+  // candidate k-values worth testing: the domain ends, every k-subrange
+  // breakpoint the cell has, and the interior stationary point (if any)
+  function kCandidates(p, cls, kb){
+    var z = p.z, a1 = a1fn(p), p1 = p1fn(p), u0 = u0fn(p), qt = qtfn(p);
+    var kt = kb.kTilde, kbar = kb.kBar;
+    var cs = [1e-9, z];
+    function pushW(w){
+      if (w === null) return;
+      var k = z * w * w;
+      if (k > 1e-12 && k <= z) cs.push(k);
+    }
+    var key = cls.bRP + cls.bRC;
+    if (key === "HL"){
+      pushW(wShapeA(1, 1 - qt, a1));
+    } else if (key === "HM"){
+      cs.push(kt);
+      pushW(wShapeA(1, 1 - qt, a1));
+    } else if (key === "HH"){
+      // Pi(k) = k + const, slope always +1 -> handled by the domain-end candidates
+    } else if (key === "ML"){
+      cs.push(kbar);
+      pushW(wShapeA(p1, 0, a1));
+    } else if (cls.bRP === "M" && cls.bRC === "M" && cls.region === "Φ"){
+      cs.push(kt, kbar);
+      pushW(wShapeA(p1, 0, a1));
+    } else if (cls.bRP === "M" && cls.bRC === "M" && cls.region === "Ψ"){
+      cs.push(kbar, kt);
+      pushW(wShapeB(u0, 0, a1));
+    } else if (key === "MH"){
+      cs.push(kbar);
+      pushW(wShapeB(1, qt, a1));
+    } else if (key === "LL"){
+      // Pi(k) = 0 everywhere -- no candidate needed
+    } else if (key === "LM"){
+      cs.push(kt);
+      pushW(wShapeB(u0, 0, a1));
+    } else if (key === "LH"){
+      pushW(wShapeB(1, qt, a1));
+    }
+    return cs.filter(function(k){ return k > 0 && k <= z + 1e-9; }).map(function(k){ return Math.min(k, z); });
+  }
+
+  function analyticOptimum(p, cls, kb){
+    var cs = kCandidates(p, cls, kb);
     var best = null;
+    cs.forEach(function(k){
+      var r = profitAt(k, p, cls, kb);
+      if (!best || r.total > best.total) best = {k: k, total: r.total};
+    });
+    return best;
+  }
+
+  function sampleCurve(p, cls, kb, kMin, kMax, N){
+    var curve = [];
     for (var i = 0; i <= N; i++){
       var k = kMin + (kMax - kMin) * i / N;
-      var r = profitAt(k, p, cls, kb);
-      curve.push({k: k, total: r.total});
-      if (!best || r.total > best.total) best = {k: k, total: r.total};
+      curve.push({k: k, total: profitAt(k, p, cls, kb).total});
     }
-    // local refine around the coarse best
-    var idx = curve.findIndex(function(pt){ return pt.k === best.k; });
-    var loK = curve[Math.max(0, idx - 2)].k;
-    var hiK = curve[Math.min(N, idx + 2)].k;
-    var N2 = 80;
-    for (var j = 0; j <= N2; j++){
-      var k2 = loK + (hiK - loK) * j / N2;
-      var r2 = profitAt(k2, p, cls, kb);
-      if (r2.total > best.total) best = {k: k2, total: r2.total};
-    }
-    return {best: best, curve: curve, kMin: kMin, kMax: kMax};
+    return curve;
   }
 
   // ---------- rendering ----------
@@ -558,37 +629,29 @@
 
     function x(q){ return ML + Math.min(Math.max(q,0),1) * innerW; }
 
-    var line = "var(--line)", track = "var(--track)", positive = "var(--positive)",
-        accent = "var(--accent)", ink = "var(--ink)", inkSoft = "var(--ink-soft)", inkFaint = "var(--ink-faint)",
-        surfaceRaised = "var(--surface-raised)";
+    var line = "var(--line)", buy = "var(--buy)", noBuy = "var(--no-buy)",
+        ink = "var(--ink)", inkFaint = "var(--ink-faint)";
 
     var parts = [];
-    parts.push('<defs></defs>');
 
-    // base track (no purchase)
-    parts.push('<rect x="' + ML + '" y="' + barY + '" width="' + innerW + '" height="' + barH + '" rx="5" fill="' + track + '"></rect>');
+    // base fill = won't-buy (red); the buy intervals (green) are painted on top.
+    // res.segs are the decision table's active q-intervals at k* -- wherever
+    // purchase probability is nonzero (P=1 or 0<p_e<1) -- so their union is
+    // exactly "who buys"; everything else in [0,1] is "won't buy".
+    parts.push('<rect x="' + ML + '" y="' + barY + '" width="' + innerW + '" height="' + barH + '" rx="5" fill="' + noBuy + '"></rect>');
 
-    // segments
-    var defs = [];
-    res.segs.slice().sort(function(a,b){return a.lo-b.lo;}).forEach(function(seg, i){
-      var sx = x(seg.lo), ex = x(seg.hi);
-      if (seg.branch === "P1"){
-        parts.push('<rect x="' + sx + '" y="' + barY + '" width="' + (ex-sx) + '" height="' + barH + '" fill="' + positive + '"></rect>');
+    var merged = [];
+    res.segs.slice().sort(function(a,b){ return a.lo-b.lo; }).forEach(function(seg){
+      if (merged.length && seg.lo <= merged[merged.length-1].hi + 1e-6){
+        merged[merged.length-1].hi = Math.max(merged[merged.length-1].hi, seg.hi);
       } else {
-        var gid = "peg" + i;
-        var stops = [];
-        var steps = 8;
-        for (var s = 0; s <= steps; s++){
-          var q = seg.lo + (seg.hi - seg.lo) * s / steps;
-          var prob = Math.min(Math.max(pe(q, p), 0), 1);
-          var alpha = 0.16 + prob * 0.84;
-          stops.push('<stop offset="' + (s/steps*100) + '%" stop-color="' + accent + '" stop-opacity="' + alpha.toFixed(2) + '"></stop>');
-        }
-        defs.push('<linearGradient id="' + gid + '" x1="0" y1="0" x2="1" y2="0">' + stops.join("") + '</linearGradient>');
-        parts.push('<rect x="' + sx + '" y="' + barY + '" width="' + (ex-sx) + '" height="' + barH + '" fill="url(#' + gid + ')"></rect>');
+        merged.push({lo: seg.lo, hi: seg.hi});
       }
     });
-    parts[0] = '<defs>' + defs.join("") + '</defs>';
+    merged.forEach(function(seg){
+      var sx = x(seg.lo), ex = x(seg.hi);
+      parts.push('<rect x="' + sx + '" y="' + barY + '" width="' + (ex-sx) + '" height="' + barH + '" fill="' + buy + '"></rect>');
+    });
 
     parts.push('<rect x="' + ML + '" y="' + barY + '" width="' + innerW + '" height="' + barH + '" rx="5" fill="none" stroke="' + line + '" stroke-width="1"></rect>');
 
@@ -652,8 +715,10 @@
 
     var cls = classify(p);
     var kb = kBreak(p);
-    var opt = findOptimum(p, cls, kb);
-    var res = profitAt(opt.best.k, p, cls, kb);
+    var best = analyticOptimum(p, cls, kb);
+    var kMin = Math.max(p.z * 0.001, 1e-4), kMax = p.z;
+    var opt = {best: best, curve: sampleCurve(p, cls, kb, kMin, kMax, 260), kMin: kMin, kMax: kMax};
+    var res = profitAt(best.k, p, cls, kb);
 
     document.getElementById("stat-kstar").textContent = fmt(opt.best.k);
     document.getElementById("stat-kstar-sub").textContent = "range (0, " + fmt(p.z) + ")";
