@@ -191,6 +191,7 @@
   .legend-item{display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-soft);}
   .swatch{width:12px; height:12px; border-radius:3px; flex:none;}
   .swatch.buy{background:var(--buy);}
+  .swatch.buy-prob{background:repeating-linear-gradient(45deg, var(--buy) 0 2px, var(--buy-soft) 2px 4px);}
   .swatch.no-buy{background:var(--no-buy);}
 
   footer.formula{
@@ -202,9 +203,9 @@
 
 <div class="wrap">
   <header class="page">
-    <div class="eyebrow">Battery resale &middot; purchase-decision model</div>
+    <div class="eyebrow">Battery second life &middot; option-exercise model</div>
     <h1>Threshold Bench</h1>
-    <p class="lede">Optimal search cost and the resulting battery state-of-health (SoH) purchase range, for a given retailer/consumer valuation regime.</p>
+    <p class="lede">Optimal option price and the resulting battery state-of-health (SoH) exercise range, for a given repurposing/recycling valuation regime.</p>
   </header>
 
   <div class="layout">
@@ -213,14 +214,14 @@
         <h2>Valuations</h2>
         <div class="field">
           <div class="field-head">
-            <label for="s-vrp">Retailer valuation <span class="sym">v<sub>rp</sub></span></label>
+            <label for="s-vrp">Repurposing value <span class="sym">v<sub>rp</sub></span></label>
             <span class="field-val mono" id="v-vrp">52</span>
           </div>
           <input type="range" id="s-vrp" min="0" max="100" step="0.5" value="52">
         </div>
         <div class="field">
           <div class="field-head">
-            <label for="s-vrc">Consumer valuation <span class="sym">v<sub>rc</sub></span></label>
+            <label for="s-vrc">Recycling value <span class="sym">v<sub>rc</sub></span></label>
             <span class="field-val mono" id="v-vrc">40</span>
           </div>
           <input type="range" id="s-vrc" min="0" max="100" step="0.5" value="40">
@@ -231,21 +232,21 @@
         <h2>Market parameters</h2>
         <div class="field">
           <div class="field-head">
-            <label for="s-ci">Cost <span class="sym">c<sub>i</sub></span></label>
+            <label for="s-ci">Inspection cost <span class="sym">c<sub>i</sub></span></label>
             <span class="field-val mono" id="v-ci">25</span>
           </div>
           <input type="range" id="s-ci" min="0" max="100" step="0.5" value="25">
         </div>
         <div class="field">
           <div class="field-head">
-            <label for="s-z">Noise spread <span class="sym">z</span></label>
+            <label for="s-z">Open market uncertainty <span class="sym">z</span></label>
             <span class="field-val mono" id="v-z">15</span>
           </div>
           <input type="range" id="s-z" min="1" max="100" step="0.5" value="15">
         </div>
         <div class="field">
           <div class="field-head">
-            <label for="s-mu">Value of info <span class="sym">&mu;</span></label>
+            <label for="s-mu">Open market valuation <span class="sym">&mu;</span></label>
             <span class="field-val mono" id="v-mu">10</span>
           </div>
           <input type="range" id="s-mu" min="0" max="100" step="0.5" value="10">
@@ -259,13 +260,13 @@
         </div>
       </fieldset>
 
-      <p class="hint">k is the free decision variable &mdash; the bench searches k &isin; (0, z) for the profit-maximizing search cost.</p>
+      <p class="hint">k is the free decision variable &mdash; the bench solves in closed form for the profit-maximizing option price k &isin; (0, z).</p>
     </aside>
 
     <main>
       <div class="stats">
         <div class="panel stat">
-          <span class="label">Optimal search cost k*</span>
+          <span class="label">Optimal option price k*</span>
           <span class="value mono" id="stat-kstar">&ndash;</span>
           <span class="sub" id="stat-kstar-sub">&nbsp;</span>
         </div>
@@ -283,7 +284,7 @@
 
       <div class="panel chart-card">
         <div class="chart-head">
-          <h3>Profit across search cost</h3>
+          <h3>Profit across option price</h3>
           <span class="note">&Pi;(k) over k &isin; (0, z); k* solved in closed form</span>
         </div>
         <div class="chart-box"><svg id="chart-profit" viewBox="0 0 640 240" preserveAspectRatio="xMidYMid meet"></svg></div>
@@ -291,13 +292,14 @@
 
       <div class="panel chart-card">
         <div class="chart-head">
-          <h3>Purchase range at k*</h3>
+          <h3>Exercise range at k*</h3>
           <span class="note">Battery state of health q &isin; [0, 1]</span>
         </div>
         <div class="chart-box"><svg id="chart-q" viewBox="0 0 640 140" preserveAspectRatio="xMidYMid meet"></svg></div>
         <div class="legend">
-          <span class="legend-item"><span class="swatch buy"></span>Will buy</span>
-          <span class="legend-item"><span class="swatch no-buy"></span>Won't buy</span>
+          <span class="legend-item"><span class="swatch buy"></span>Will definitely exercise (P = 1)</span>
+          <span class="legend-item"><span class="swatch buy-prob"></span>Will probabilistically exercise (0 &lt; P &lt; 1)</span>
+          <span class="legend-item"><span class="swatch no-buy"></span>Won't exercise</span>
         </div>
       </div>
 
@@ -591,7 +593,7 @@
     xt.forEach(function(kv){
       parts.push('<text class="axis-text" x="' + x(kv) + '" y="' + (H - 8) + '" text-anchor="middle">' + fmt(kv) + '</text>');
     });
-    parts.push('<text class="axis-text" x="' + (ML+innerW/2) + '" y="' + (H-1) + '" text-anchor="middle" style="font-weight:600;">search cost k</text>');
+    parts.push('<text class="axis-text" x="' + (ML+innerW/2) + '" y="' + (H-1) + '" text-anchor="middle" style="font-weight:600;">option price k</text>');
 
     // breakpoint guides -- labels sit at the foot of the chart so they never
     // collide with the k* annotation near the top, even when k* lands on a kink
@@ -636,23 +638,22 @@
 
     var parts = [];
 
-    // base fill = won't-buy (red); the buy intervals (green) are painted on top.
-    // res.segs are the decision table's active q-intervals at k* -- wherever
-    // purchase probability is nonzero (P=1 or 0<p_e<1) -- so their union is
-    // exactly "who buys"; everything else in [0,1] is "won't buy".
+    // reusable diagonal-hatch fill for the "probabilistic exercise" pieces
+    // (0<P<1), so it reads as a distinct sub-category of the buy region
+    // without introducing a third hue -- still unmistakably "green = buy".
+    parts.push('<defs><pattern id="probHatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="var(--buy-soft)"></rect><rect width="2" height="4" fill="var(--buy)"></rect></pattern></defs>');
+
+    // base fill = won't-exercise (red); the exercise intervals are painted on
+    // top -- solid green where P(q)=1 (P1 branch), hatched green where
+    // 0<P(q)<1 (Pe branch). res.segs are the decision table's active
+    // q-intervals at k*, so their union is exactly "who might exercise";
+    // everything else in [0,1] is "won't exercise".
     parts.push('<rect x="' + ML + '" y="' + barY + '" width="' + innerW + '" height="' + barH + '" rx="5" fill="' + noBuy + '"></rect>');
 
-    var merged = [];
     res.segs.slice().sort(function(a,b){ return a.lo-b.lo; }).forEach(function(seg){
-      if (merged.length && seg.lo <= merged[merged.length-1].hi + 1e-6){
-        merged[merged.length-1].hi = Math.max(merged[merged.length-1].hi, seg.hi);
-      } else {
-        merged.push({lo: seg.lo, hi: seg.hi});
-      }
-    });
-    merged.forEach(function(seg){
       var sx = x(seg.lo), ex = x(seg.hi);
-      parts.push('<rect x="' + sx + '" y="' + barY + '" width="' + (ex-sx) + '" height="' + barH + '" fill="' + buy + '"></rect>');
+      var fill = seg.branch === "P1" ? buy : "url(#probHatch)";
+      parts.push('<rect x="' + sx + '" y="' + barY + '" width="' + (ex-sx) + '" height="' + barH + '" fill="' + fill + '"></rect>');
     });
 
     parts.push('<rect x="' + ML + '" y="' + barY + '" width="' + innerW + '" height="' + barH + '" rx="5" fill="none" stroke="' + line + '" stroke-width="1"></rect>');
@@ -746,7 +747,7 @@
     if (res.segs.length === 0){
       var chip0 = document.createElement("span");
       chip0.className = "chip zero";
-      chip0.textContent = "no purchase";
+      chip0.textContent = "no exercise";
       chipRow.appendChild(chip0);
     }
 
