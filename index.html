@@ -375,10 +375,13 @@
   function vhat1(q, p){ return p.mu*q + p.mu0 + p.z; }
   function vhat2(q, p){ return (p.vrc + (p.vrp - p.vrc + p.mu)*q + p.mu0 - p.c_i - p.z) / 2; }
 
+  // pi(q) = k + (V(q)-v_hat(q)-c_i)*P(q)  -- k sits OUTSIDE the probability
+  // weighting (a search/inspection cost paid regardless of whether a sale
+  // results); only the margin (V-v_hat-c_i) is weighted by P(q).
   function piAt(q, branch, p, k){
     var v = V(q, p);
-    if (branch === "P1") return (k + v - vhat1(q,p) - p.c_i) * 1;
-    return (k + v - vhat2(q,p) - p.c_i) * pe(q, p);
+    if (branch === "P1") return k + (v - vhat1(q,p) - p.c_i);
+    return k + (v - vhat2(q,p) - p.c_i) * pe(q, p);
   }
 
   function simpson(fn, lo, hi, n){
@@ -447,16 +450,19 @@
 
   // ---------- closed-form k* (FOC/SOC solved per cell, section 11) ----------
   //
-  // Using V(q)-v_hat(q)-c_i = 2z*p_e(q) on the Pe branch, every cell's profit
-  // integral reduces to a function of w = sqrt(k/z), and dPi/dk=0 collapses to
-  // a quadratic in w. Two "shapes" cover every q_p-touching piece in section 9:
-  //   Shape A: interval [q_p, C]  (q_p is the LOWER bound)
-  //   Shape B: interval [C, q_p]  (q_p is the UPPER bound)
-  // where C is a fixed (k-independent) endpoint (0, 1, or q_tilde) and S is the
-  // slope contributed by any other, fixed-bound piece active in the same row.
-  // Cells whose active row never touches q_p (H,H; the "lower" half of H,M,
-  // M,M and M,H; L,L) are linear in k, so their optimum is always a corner --
-  // handled below by simply comparing candidate k-values directly.
+  // pi_Pe(q) = k + 2z*p_e(q)^2  and  pi_P1(q) = k - 2z + 4z*p_e(q)  (the P1
+  // branch is unaffected by where k sits, since P(q)=1 there either way).
+  // Because k now enters with a plain +1 derivative on EVERY branch, a
+  // fixed-bound piece (touching neither q_p) always has dPi/dk = its own
+  // q-length -- never a probability-weighted slope -- so it's always
+  // strictly increasing in k, and its local optimum always sits at the
+  // subrange's own upper edge. Only pieces whose interval touches q_p can
+  // have a genuine interior optimum, and for those dPi/dk=0 now solves
+  // LINEARLY in w=sqrt(k/z) (no nested square root needed):
+  //   Shape A: interval [q_p, C]  (q_p is the LOWER bound) -> w=(2/5)(uC+S*a1)
+  //   Shape B: interval [C, q_p]  (q_p is the UPPER bound) -> w=(2/5)(uC-S*a1)
+  // where C is a fixed (k-independent) endpoint (0, 1, or q_tilde) and S is
+  // the q-length of any other fixed-bound piece active in the same row.
 
   function a1fn(p){ return -safeD(p) / (4*p.z); }
   function p1fn(p){ return pe(1, p); }               // p1^2 = kBar/z
@@ -464,15 +470,11 @@
   function qtfn(p){ return qVals(p, 0).qt; }          // k-independent
 
   function wShapeA(uC, S, a1){
-    var disc = 1 + 2*uC*uC + 4*S*a1;
-    if (disc < 0) return null;
-    var w = (-1 + Math.sqrt(disc)) / 2;
+    var w = 0.4 * (uC + S*a1);
     return w >= 0 ? w : null;
   }
   function wShapeB(uC, S, a1){
-    var disc = 1 + 2*uC*uC - 4*S*a1;
-    if (disc < 0) return null;
-    var w = (-1 + Math.sqrt(disc)) / 2;
+    var w = 0.4 * (uC - S*a1);
     return w >= 0 ? w : null;
   }
 
