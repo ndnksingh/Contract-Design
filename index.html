@@ -193,6 +193,8 @@
   .swatch.buy{background:var(--buy);}
   .swatch.buy-prob{background:repeating-linear-gradient(45deg, var(--buy) 0 2px, var(--buy-soft) 2px 4px);}
   .swatch.no-buy{background:var(--no-buy);}
+  .swatch.vhat-line{width:16px; height:2px; border-radius:1px; background:var(--positive);}
+  .swatch.vhat-zero{width:16px; height:0; border-top:2px dashed var(--ink-faint);}
 
   footer.formula{
     margin-top:20px; padding-top:14px; border-top:1px solid var(--line);
@@ -300,6 +302,18 @@
           <span class="legend-item"><span class="swatch buy"></span>Purchases &amp; exercises definitely (P = 1)</span>
           <span class="legend-item"><span class="swatch buy-prob"></span>Purchases &amp; exercises probabilistically (0 &lt; P &lt; 1)</span>
           <span class="legend-item"><span class="swatch no-buy"></span>Won't buy</span>
+        </div>
+      </div>
+
+      <div class="panel chart-card">
+        <div class="chart-head">
+          <h3>Optimal Residual Value</h3>
+          <span class="note">v&#770;(q) over q &isin; [0, 1]; realized only where a purchase occurs</span>
+        </div>
+        <div class="chart-box"><svg id="chart-vhat" viewBox="0 0 640 220" preserveAspectRatio="xMidYMid meet"></svg></div>
+        <div class="legend">
+          <span class="legend-item"><span class="swatch vhat-line"></span>v&#770;(q), where a purchase occurs</span>
+          <span class="legend-item"><span class="swatch vhat-zero"></span>v&#770;(q) = 0, no purchase</span>
         </div>
       </div>
 
@@ -708,6 +722,96 @@
     svg.innerHTML = parts.join("");
   }
 
+  // v_hat(q) is only ever realized where a purchase actually occurs (the
+  // same res.segs used for the purchase-range bar); everywhere else it is
+  // plotted as a hard 0, since no transaction -> no residual value changes
+  // hands. This produces genuine step discontinuities at the segment
+  // boundaries (v_hat needn't approach 0 there), so each contiguous piece
+  // is drawn as its own <path> rather than one continuous line.
+  function renderVhatChart(res, p){
+    var svg = document.getElementById("chart-vhat");
+    var W = 640, H = 220, ML = 44, MR = 14, MT = 14, MB = 30;
+    var innerW = W - ML - MR, innerH = H - MT - MB;
+
+    function x(q){ return ML + Math.min(Math.max(q, 0), 1) * innerW; }
+
+    var segs = res.segs.slice().sort(function(a,b){ return a.lo - b.lo; });
+    var pieces = [], cursor = 0;
+    segs.forEach(function(s){
+      if (s.lo > cursor + 1e-9) pieces.push({lo: cursor, hi: s.lo, active: false});
+      pieces.push({lo: s.lo, hi: s.hi, active: true, branch: s.branch});
+      cursor = s.hi;
+    });
+    if (cursor < 1 - 1e-9) pieces.push({lo: cursor, hi: 1, active: false});
+    if (pieces.length === 0) pieces.push({lo: 0, hi: 1, active: false});
+
+    function vAt(q, piece){
+      if (!piece.active) return 0;
+      return piece.branch === "P1" ? vhat1(q, p) : vhat2(q, p);
+    }
+
+    var sampled = pieces.map(function(pc){
+      var n = 48, pts = [];
+      for (var i = 0; i <= n; i++){
+        var q = pc.lo + (pc.hi - pc.lo) * i / n;
+        pts.push({q: q, v: vAt(q, pc)});
+      }
+      return {piece: pc, pts: pts};
+    });
+
+    var allV = [0];
+    sampled.forEach(function(s){ s.pts.forEach(function(pt){ allV.push(pt.v); }); });
+    var vMin = Math.min.apply(null, allV), vMax = Math.max.apply(null, allV);
+    if (vMax - vMin < 1e-6){ vMax += 1; vMin -= 1; }
+    var pad = (vMax - vMin) * 0.1;
+    vMin -= pad; vMax += pad;
+
+    function y(v){ return MT + innerH - (v - vMin) / (vMax - vMin) * innerH; }
+
+    var positive = "var(--positive)", line = "var(--line)",
+        inkFaint = "var(--ink-faint)", surfaceSunken = "var(--surface-sunken)";
+
+    var parts = [];
+    parts.push('<rect x="' + ML + '" y="' + MT + '" width="' + innerW + '" height="' + innerH + '" fill="' + surfaceSunken + '" rx="6"></rect>');
+
+    for (var g = 0; g <= 4; g++){
+      var gv = vMin + (vMax - vMin) * g / 4;
+      var gy = y(gv);
+      parts.push('<line x1="' + ML + '" y1="' + gy + '" x2="' + (ML+innerW) + '" y2="' + gy + '" stroke="' + line + '" stroke-width="1"></line>');
+      parts.push('<text class="axis-text" x="' + (ML - 8) + '" y="' + (gy + 3) + '" text-anchor="end">' + fmt(gv) + '</text>');
+    }
+
+    [0, .25, .5, .75, 1].forEach(function(t){
+      parts.push('<text class="axis-text" x="' + x(t) + '" y="' + (H - 8) + '" text-anchor="middle">' + t.toFixed(2) + '</text>');
+    });
+    parts.push('<text class="axis-text" x="' + (ML+innerW/2) + '" y="' + (H-1) + '" text-anchor="middle" style="font-weight:600;">battery state of health q</text>');
+
+    var zeroY = y(0);
+    parts.push('<line x1="' + ML + '" y1="' + zeroY + '" x2="' + (ML+innerW) + '" y2="' + zeroY + '" stroke="' + inkFaint + '" stroke-width="1"></line>');
+
+    sampled.forEach(function(s){
+      var d = s.pts.map(function(pt){ return x(pt.q) + "," + y(pt.v); }).join(" L ");
+      if (s.piece.active){
+        parts.push('<path d="M ' + d + '" fill="none" stroke="' + positive + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></path>');
+      } else {
+        parts.push('<path d="M ' + d + '" fill="none" stroke="' + inkFaint + '" stroke-width="1.5" stroke-dasharray="1,4" stroke-linecap="round"></path>');
+      }
+    });
+
+    // mark the jump at every boundary between an active and inactive piece
+    pieces.forEach(function(pc, i){
+      if (i === 0) return;
+      var prev = pieces[i-1];
+      if (prev.active === pc.active) return;
+      var bx = x(pc.lo);
+      var vHere = vAt(pc.lo, pc), vPrev = vAt(pc.lo, prev);
+      parts.push('<line x1="' + bx + '" y1="' + y(vPrev) + '" x2="' + bx + '" y2="' + y(vHere) + '" stroke="' + inkFaint + '" stroke-width="1" stroke-dasharray="2,2"></line>');
+    });
+
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.innerHTML = parts.join("");
+  }
+
   function bucketWord(b){
     return b === "L" ? "Low" : (b === "M" ? "Mid" : "High");
   }
@@ -755,6 +859,7 @@
 
     renderProfitChart(opt, p);
     renderQChart(res, p, kb);
+    renderVhatChart(res, p);
 
     document.getElementById("formula-strip").textContent =
       "v_rp thresholds: (" + fmt(cls.vrp_lower) + ", " + fmt(cls.vrp_upper) + ")   ·   v_rc thresholds: (" + fmt(cls.vrc_lower) + ", " + fmt(cls.vrc_upper) + ")   ·   k̃ = " + fmt(kb.kTilde) + "   ·   k̄ = " + fmt(kb.kBar);
